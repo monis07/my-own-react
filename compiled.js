@@ -131,16 +131,136 @@ function newTextElement(text) {
   };
 }
 
-//Now the thing we have done above that assigning children with primitive values with empty array is not done in react but we will do it so it is easy for us
-//now we need a name for our library so that we can finally use our funtion that we have created
+/* STEP -3 ------------------------------------------------------------------------------------------------- 
+Now we need concurrent mode because if element tree is too big recursive rendering call might block the main thread for too long. if browser needs to do high priority stuff it will have to it until the render finishes.
 
-var monisReact = {
-  newElement: newElement,
-  render: render,
-  useState: useState
+so we are going to break the work into small units and we will interrupt the rendering if browser needs to some other important work
+
+replace function render with function createDom to create fibers
+*/
+
+function createDom(fiber) {
+  //create a new element
+  var dom = fiber.type !== 'ELEMENT_TEXY' ? document.createElement(fiber.type) : document.createTextNode("");
+  updateDom(dom, {}, fiber.props);
+  return dom;
+}
+
+//compare the props of the old fiber to the props of the new fiber
+//remove the props that are gone and set the props that are new and changed
+
+var isEvent = function isEvent(key) {
+  return key.startsWith("on");
 };
+//this checks if key is event related or not because in React event handlers starts with "on prefix"
+var isProperty = function isProperty(key) {
+  return key !== "children" && !isEvent(key);
+};
+//this checks if key is not equal to children and key is not event related
 
-/** @jsx monisReact.newElement*/
+var isNew = function isNew(prev, next) {
+  return function (key) {
+    return prev[key] !== next[key];
+  };
+};
+var isGone = function isGone(prev, next) {
+  return function (key) {
+    return !(key in next);
+  };
+};
+function updateDom(dom, prevProps, nextProps) {
+  //if event listeners changed we remove it from the node
+  //We are removing old or changed event listeners because we need DOM and it's associated event handling is in sync with current state of application
+  //below line
+  //--get array of keys from previous props
+  //-- filter the array to include keys that are event related
+  //-- another filter -- key is not present in the next props or considered new
+  Object.keys(prevProps).filter(isEvent).filter(function (key) {
+    return !(key in nextProps) || isNew(prevProps, nextProps)(key);
+  }).forEach(function (name) {
+    var eventType = name.toLowerCase().substring(2);
+    //convert to lowercase and remove "on"
+    dom.removeEventListener(eventType, prevProps[name]);
+  });
+  //remove old properties
+  Object.keys(prevProps).filter(isProperty).filter(isGone(prevProps, nextProps)).forEach(function (name) {
+    dom[name] = "";
+  });
+
+  // Set new or changed properties
+  Object.keys(nextProps).filter(isProperty).filter(isNew(prevProps, nextProps)).forEach(function (name) {
+    dom[name] = nextProps[name];
+  });
+
+  //Add event listeners(add new handlers)
+  Object.keys(prevProps).filter(isEvent).filter(isNew(prevProps, nextProps)).forEach(function (name) {
+    var eventType = name.toLowerCase().substring(2);
+    dom.addEventListener(eventType, nextProps[name]);
+  });
+}
+
+/* STEP-5---------------0--RENDER AND COMMIT PHASES----------------------------------------------------- 
+the way we are writing code above in the perform unit of work the browser could interuupt our work before we finish rendering so we will remove this piece of code
+if (fiber.parent) {
+    fiber.parent.dom.appendChild(fiber.dom)
+  }
+So we dont want that. That could display the incomplete UI. So to prevent that we will keep track of the root of the fibre tree
+    Remove the above code base and add workinprogressRoot in the render function above to keep track of root of the fibre tree
+*/
+
+//when commtting changes to the dom we also use fibers from that deletion array
+function commitRoot() {
+  deletions.forEach(commitWork);
+  commitWork(wiprogressRoot.child);
+  //after the work is done the currentRoot will contain the reference of last fibre tree we committed to the dom
+  currentRoot = wiprogressRoot;
+  wiprogressRoot = null;
+}
+
+//we also need to change the commit work to handle the new effect tags
+
+// function commitWork(fiber){
+//     if(!fiber)
+//         return
+
+//     const domParent = fiber.parent.dom;
+
+//     if(fiber.effectTag === 'PLACEMENT' && fiber.dom!=null)
+//     domParent.appendChild(fiber.dom)  
+// //here we are doing fibre.dom and not fibre because fibre represent the element in the virtual dom which will not make sense so fibre.dom holds the reference to actual dom element  
+// else if(fiber.effectTag === "DELETION")
+//     domParent.removeChild(fiber.dom)
+
+// else if(fiber.effectTag === "UPDATE" && fiber.dom!=null){
+//     updateDom(fiber.dom,fiber.alternate.props,fiber.props)
+// }
+//     commitWork(fiber.child)
+//     commitWork(fiber.sibling)
+// }
+
+//now what we need to change is the commitWork function
+//here we have fibers without dom nodes so we neeed to do two things
+function commitWork(fiber) {
+  if (!fiber) return;
+
+  //first to find the parent of the dom node by going up the fiber tree until we find a fibre with a dom node
+  //fiber is the representation in the virtual dom and dom node is actual dom element in the browser document object model
+  var domParentFiber = fiber.parent;
+  while (!domParentFiber.dom) domParentFiber = domParentFiber.parent;
+  var domParent = domParentFiber.dom;
+  if (fiber.effectTag === 'PLACEMENT' && fiber.dom != null) domParent.appendChild(fiber.dom);
+  //here we are doing fibre.dom and not fibre because fibre represent the element in the virtual dom which will not make sense so fibre.dom holds the reference to actual dom element  
+  else if (fiber.effectTag === "DELETION") commitDeletion(fiber, domParent);else if (fiber.effectTag === "UPDATE" && fiber.dom != null) {
+    updateDom(fiber.dom, fiber.alternate.props, fiber.props);
+  }
+  commitWork(fiber.child);
+  commitWork(fiber.sibling);
+}
+function commitDeletion(fiber, domParent) {
+  if (fiber.dom) domParent.removeChild(fiber.dom);else commitDeletion(fiber.child, domParent);
+  //And when removing a node we also need to keep going until we find a child with a DOM node.
+}
+
 // const element=monisReact.newElement(
 //     "div",
 //     {id:"big"},
@@ -148,14 +268,12 @@ var monisReact = {
 //     monisReact.newElement("p",null,"Second")
 //     )
 
-/** @jsx monisReact.newElement*/
 // const element1=(
 //     <div style={{background:"aqua"}}> 
 //         <h1>Hello World!</h1>
 //     </div>
 // )
 
-/** @jsx monisReact.newElement*/
 // const element=(
 //     <h1 style="color:red;background:aqua">Hello Monis!</h1>
 // )
@@ -194,26 +312,6 @@ var monisReact = {
 //     container.appendChild(newNode);
 // }
 
-/* STEP -3 ------------------------------------------------------------------------------------------------- 
-Now we need concurrent mode because if element tree is too big recursive rendering call might block the main thread for too long. if browser needs to do high priority stuff it will have to it until the render finishes.
-
-so we are going to break the work into small units and we will interrupt the rendering if browser needs to some other important work
-
-replace function render with function createDom to create fibers
-*/
-
-function createDom(fiber) {
-  //create a new element
-  var newNode = fiber.type !== 'ELEMENT_TEXY' ? document.createElement(fiber.type) : document.createTextNode("");
-  //assign properties to new node from fiber.props
-  Object.keys(fiber.props).filter(function (key) {
-    return key !== "children";
-  }).forEach(function (prop) {
-    newNode[prop] = fiber.props[prop];
-  });
-  return newNode;
-}
-
 //in the render function we set wiprogressRoot of work to the "ROOT" of the fibre tree
 function render(element, container) {
   wiprogressRoot = {
@@ -241,9 +339,11 @@ function workLoop(deadline) {
     shouldYield = deadline.timeRemaining() < 1;
   }
   while (!nextUnitOfWork && wiprogressRoot) commitRoot();
-  requestIdleCallback(workLoop); //this schedules the workloop function to work when browser is idle
+  //this schedules the workloop function to work when browser is idle
+  requestIdleCallback(workLoop);
 }
-requestIdleCallback(workLoop); //this schedules the workloop function to work when browser is idle
+//this schedules the workloop function to work when browser is idle
+requestIdleCallback(workLoop);
 
 // function performUnitOfWork(fiber) {
 //     //when fibre will be the root of the tree.It's dom will be null. dont confuse it with the value container as given above. here dom means the children of that particular fibre
@@ -277,75 +377,91 @@ requestIdleCallback(workLoop); //this schedules the workloop function to work wh
 //     }
 //   }
 
-//compare the props of the old fiber to the props of the new fiber
-//remove the props that are gone and set the props that are new and changed
+//Function components-------------------------------------------------------------------------
 
-var isEvent = function isEvent(key) {
-  return key.startsWith("on");
-}; //this checks if key is event related or not because in React event handlers starts with "on prefix"
-var isProperty = function isProperty(key) {
-  return key !== "children" && !isEvent(key);
-}; //this checks if key is not equal to children and key is not event related
+///Lets add support for the function components
 
-function updateDom(dom, prevProps, nextProps) {
-  //if event listeners changed we remove it from the node
-  //We are removing old or changed event listeners because we need DOM and it's associated event handling is in sync with current state of application
-  //below line
-  //--get array of keys from previous props
-  //-- filter the array to include keys that are event related
-  //-- another filter -- key is not present in the next props or considered new
-  Object.keys(prevProps).filter(isEvent).filter(function (key) {
-    return !(key in nextProps) || isNew(prevProps, nextProps)(key);
-  }).forEach(function (name) {
-    var eventType = name.toLowerCase().substring(2); //convert to lowercase and remove "on"
-    dom.removeEventListener(eventType, prevProps[name]);
-  });
+//function component are different in two ways 
+// 1.  fiber from function component doesnt have a dom node
+//2. children come from running the function instead of
+// getting them directly from the props
 
-  //Add event listeners(add new handlers)
-  Object.keys(prevProps).filter(isEvent).filter(isNew(prevProps, nextProps)).forEach(function (name) {
-    var eventType = name.toLowerCase().substring(2);
-    dom.addEventListener(eventType, nextProps[name]);
-  });
-}
+//we will change perform unit of work now according to function components
+function performUnitOfWork(fiber) {
+  var isFunctionComponent = fiber.type instanceof Function;
+  //if it is function we will handle it differently else as same as we were handling before with the reconcileChildren function
+  if (isFunctionComponent) updateFunctionComponent(fiber);else updateHostComponent(fiber);
 
-/** STEP-5---------------0--RENDER AND COMMIT PHASES----------------------------------------------------- 
- * the way we are writing code above in the perform unit of work the browser could interuupt our work before we finish rendering so we will remove this piece of code
- if (fiber.parent) {
-      fiber.parent.dom.appendChild(fiber.dom)
+  //then we search for next unit of work
+  //1st child is tried
+
+  if (fiber.child) {
+    return fiber.child;
+  }
+
+  //then sibling is tried and if not get the parent sibling means uncle is tried
+  //here nextfiber for uncle will work like this-- nextfiber.sibling will be null so nextfiber will be parent
+  //then nextfiber will again run because of while loop and now it will target uncle because it is  one way up in the tree structure.
+  var nextFiber = fiber;
+  while (nextFiber) {
+    if (nextFiber.sibling) {
+      return nextFiber.sibling;
     }
- * So we dont want that. That could display the incomplete UI. So to prevent that we will keep track of the root of the fibre tree
-
-    Remove the above code base and add workinprogressRoot in the render function above to keep track of root of the fibre tree
- * */
-//when commtting changes to the dom we also use fibers from that deletion array
-function commitRoot() {
-  deletions.forEach(commitWork);
-  commitWork(wiprogressRoot.child);
-  //after the work is done the currentRoot will contain the reference of last fibre tree we committed to the dom
-  currentRoot = wiprogressRoot;
-  wiprogressRoot = null;
+    nextFiber = nextFiber.parent;
+  }
 }
+var wipFiber = null;
+var hookIndex = null;
+function updateFunctionComponent(fiber) {
+  wipFiber = fiber;
+  hookIndex = 0;
+  wipFiber.hooks = [];
+  var children = [fiber.type(fiber.props)];
+  //fiber.type is the App function here and when we run it returns the h1 element
+  reconcileChildren(fiber, children);
+  //then everything works in the same way
+}
+function useState(initial) {
+  //when function component calls useState we check if we have an old hook. we check in the the alternate of the fiber
+  var oldHook = wipFiber.alternate && wipFiber.alternate.hooks && wipFiber.alternate.hooks[hookIndex];
+  var hook = {
+    state: oldHook ? oldHook.state : initial,
+    queue: []
+  };
+  var actions = oldHook ? oldHook.queue : [];
+  actions.forEach(function (action) {
+    hook.state = action(hook.state);
+  });
+  var setState = function setState(action) {
+    hook.queue.push(action);
+    //now we will do this process so that workloop can start and set the new render phase
+    //we will set workinprogressRoot as nextunitofwork so that work loop can start a new render in phase
+    wipRoot = {
+      dom: currentRoot.dom,
+      props: currentRoot.props,
+      alternate: currentRoot
+    };
+    nextUnitOfWork = wipRoot;
+    deletions = [];
+  };
 
-//we also need to change the commit work to handle the new effect tags
+  //add new hook to the fiber, increment the hook index by one and return the state
+  wipFiber.hooks.push(hook);
+  hookIndex++;
+  return [hook.state, setState];
+}
+function updateHostComponent(fiber) {
+  /*when fibre will be the root of the tree.It's dom will be null. dont confuse it with the value container as given above. here dom means the children of that particular fibre*/
 
-// function commitWork(fiber){
-//     if(!fiber)
-//         return
+  //with this if condition we will add div to the root of the tree
+  if (!fiber.dom) {
+    fiber.dom = createDom(fiber);
+  }
 
-//     const domParent = fiber.parent.dom;
+  //then add it's children to it's too
 
-//     if(fiber.effectTag === 'PLACEMENT' && fiber.dom!=null)
-//     domParent.appendChild(fiber.dom)  
-// //here we are doing fibre.dom and not fibre because fibre represent the element in the virtual dom which will not make sense so fibre.dom holds the reference to actual dom element  
-// else if(fiber.effectTag === "DELETION")
-//     domParent.removeChild(fiber.dom)
-
-// else if(fiber.effectTag === "UPDATE" && fiber.dom!=null){
-//     updateDom(fiber.dom,fiber.alternate.props,fiber.props)
-// }
-//     commitWork(fiber.child)
-//     commitWork(fiber.sibling)
-// }
+  reconcileChildren(fiber, fiber.props.children);
+}
 
 //here we will reconcile old fibers with new one
 // here two most important things are oldFiber and element
@@ -392,11 +508,13 @@ function reconcileChildren(wipFiber, elements) {
     //as for the case of deletion, we commit the fibre tree to the dom, we do it from the workinprogressRoot which doesnt have oldFibers
     if (oldFiber && !sameType) {
       oldFiber.effectTag = "DELETION";
-      deletions.push(oldFiber); //so we need an array to keep track of the nodes we want to remove.
+      deletions.push(oldFiber);
+      //so we need an array to keep track of the nodes we want to remove.
     }
+    if (oldFiber) oldFiber = oldFiber.sibling;
     if (index === 0) {
       wipFiber.child = newFiber;
-    } else {
+    } else if (_element) {
       prevSibling.sibling = newFiber;
     }
     prevSibling = newFiber;
@@ -404,16 +522,22 @@ function reconcileChildren(wipFiber, elements) {
   }
 }
 
-//Function components-------------------------------------------------------------------------
+/*Now the thing we have done above that assigning children with primitive values with empty array is not done in react but we will do it so it is easy for us*/
+//now we need a name for our library so that we can finally use our funtion that we have created
 
-///Lets add support for the function components
+var monisReact = {
+  newElement: newElement,
+  render: render,
+  useState: useState
+};
+
+/** @jsx monisReact.newElement */
 function Counter() {
   var _monisReact$useState = monisReact.useState(1),
     _monisReact$useState2 = _slicedToArray(_monisReact$useState, 2),
     state = _monisReact$useState2[0],
     setState = _monisReact$useState2[1];
   return monisReact.newElement("h1", {
-    style: "cursor:pointer",
     onClick: function onClick() {
       return setState(function (c) {
         return c + 1;
@@ -424,106 +548,3 @@ function Counter() {
 var element = monisReact.newElement(Counter, null);
 var container = document.getElementById('root');
 monisReact.render(element, container);
-
-//function component are different in two ways 
-// 1.  fiber from function component doesnt have a dom node
-//2. children come from running the function instead of
-// getting them directly from the props
-
-//we will change perform unit of work now according to function components
-function performUnitOfWork(fiber) {
-  var isFunctionComponent = fiber.type instanceof Function;
-  //if it is function we will handle it differently else as same as we were handling before with the reconcileChildren function
-  if (isFunctionComponent) updateFunctionComponent(fiber);else updateHostComponent(fiber);
-
-  //then we search for next unit of work
-  //1st child is tried
-
-  if (fiber.child) {
-    return fiber.child;
-  }
-
-  //then sibling is tried and if not get the parent sibling means uncle is tried
-  //here nextfiber for uncle will work like this-- nextfiber.sibling will be null so nextfiber will be parent
-  //then nextfiber will again run because of while loop and now it will target uncle because it is  one way up in the tree structure.
-  var nextFiber = fiber;
-  while (nextFiber) {
-    if (nextFiber.sibling) {
-      return nextFiber.sibling;
-    }
-    nextFiber = nextFiber.parent;
-  }
-}
-var wipFiber = null;
-var hookIndex = null;
-function updateFunctionComponent(fiber) {
-  wipFiber = fiber;
-  hookIndex = 0;
-  wipFiber.hooks = [];
-  var children = [fiber.type(fiber.props)]; //fiber.type is the App function here and when we run it returns the h1 element
-  reconcileChildren(fiber, children); //then everything works in the same way
-}
-function useState(initial) {
-  //when function component calls useState we check if we have an old hook. we check in the the alternate of the fiber
-  var oldHook = wipFiber.alternate && wipFiber.alternate.hooks && wipFiber.alternate.hooks[hookIndex];
-  var hook = {
-    state: oldHook ? oldHook.state : initial,
-    queue: []
-  };
-  var actions = oldHook ? oldHook.queue : [];
-  actions.forEach(function (action) {
-    hook.state = action(hook.state);
-  });
-  var setState = function setState(action) {
-    hook.queue.push(action);
-    //now we will do this process so that workloop can start and set the new render phase
-    //we will set workinprogressRoot as nextunitofwork so that work loop can start a new render in phase
-    wipRoot = {
-      dom: currentRoot.dom,
-      props: currentRoot.props,
-      alternate: currentRoot
-    };
-    nextUnitOfWork = wipRoot;
-    deletions = [];
-  };
-
-  //add new hook to the fiber, increment the hook index by one and return the state
-  wipFiber.hooks.push(hook);
-  hookIndex++;
-  return [hook.state, setState];
-}
-function updateHostComponent(fiber) {
-  //when fibre will be the root of the tree.It's dom will be null. dont confuse it with the value container as given above. here dom means the children of that particular fibre
-
-  //with this if condition we will add div to the root of the tree
-  if (!fiber.dom) {
-    fiber.dom = createDom(fiber);
-  }
-
-  //then add it's children to it's too
-
-  var elements = fiber.props.children;
-  reconcileChildren(fiber, fiber.props.children);
-}
-
-//now what we need to change is the commitWork function
-//here we have fibers without dom nodes so we neeed to do two things
-function commitWork(fiber) {
-  if (!fiber) return;
-
-  //first to find the parent of the dom node by going up the fiber tree until we find a fibre with a dom node
-  //fiber is the representation in the virtual dom and dom node is actual dom element in the browser document object model
-  var domParentFiber = fiber.parent;
-  while (!domParentFiber.dom) domParentFiber = domParentFiber.parent;
-  var domParent = domParentFiber.dom;
-  if (fiber.effectTag === 'PLACEMENT' && fiber.dom != null) domParent.appendChild(fiber.dom);
-  //here we are doing fibre.dom and not fibre because fibre represent the element in the virtual dom which will not make sense so fibre.dom holds the reference to actual dom element  
-  else if (fiber.effectTag === "DELETION") commitDeletion(fiber, domParent);else if (fiber.effectTag === "UPDATE" && fiber.dom != null) {
-    updateDom(fiber.dom, fiber.alternate.props, fiber.props);
-  }
-  commitWork(fiber.child);
-  commitWork(fiber.sibling);
-}
-function commitDeletion(fiber, domParent) {
-  if (fiber.dom) domParent.removeChild(fiber.dom);else commitDeletion(fiber.child, domParent); //And when removing a node we also need to keep going until we find a child with a DOM node.
-}
