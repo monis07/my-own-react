@@ -96,12 +96,12 @@ So now code will be:
 
 function newElement(type,props,...children){
     return {
-        type:type,
+        type,
         props:{
             ...props,    
-            children:children.map((child)=>{
-                return typeof(child) === 'object'?child:newTextElement(child)
-            }) 
+            children:children.map(child=>
+                 typeof(child) === 'object'?child:newTextElement(child)
+            )
         }
 
     }
@@ -177,7 +177,7 @@ const isNew = (prev, next) => key =>
       })
 
     //Add event listeners(add new handlers)
-    Object.keys(prevProps).filter(isEvent).filter(isNew(prevProps,nextProps)).forEach(name=>{
+    Object.keys(nextProps).filter(isEvent).filter(isNew(prevProps,nextProps)).forEach(name=>{
         const eventType =name.toLowerCase().substring(2)
 
         dom.addEventListener(
@@ -457,12 +457,12 @@ requestIdleCallback(workLoop)
             hook.queue.push(action)
             //now we will do this process so that workloop can start and set the new render phase
             //we will set workinprogressRoot as nextunitofwork so that work loop can start a new render in phase
-            wipRoot={
+            wiprogressRoot={
                 dom:currentRoot.dom,
                 props:currentRoot.props,
                 alternate:currentRoot
             }
-            nextUnitOfWork=wipRoot
+            nextUnitOfWork=wiprogressRoot
             deletions=[]
         }
 

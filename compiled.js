@@ -193,7 +193,7 @@ function updateDom(dom, prevProps, nextProps) {
   });
 
   //Add event listeners(add new handlers)
-  Object.keys(prevProps).filter(isEvent).filter(isNew(prevProps, nextProps)).forEach(function (name) {
+  Object.keys(nextProps).filter(isEvent).filter(isNew(prevProps, nextProps)).forEach(function (name) {
     var eventType = name.toLowerCase().substring(2);
     dom.addEventListener(eventType, nextProps[name]);
   });
@@ -436,12 +436,12 @@ function useState(initial) {
     hook.queue.push(action);
     //now we will do this process so that workloop can start and set the new render phase
     //we will set workinprogressRoot as nextunitofwork so that work loop can start a new render in phase
-    wipRoot = {
+    wiprogressRoot = {
       dom: currentRoot.dom,
       props: currentRoot.props,
       alternate: currentRoot
     };
-    nextUnitOfWork = wipRoot;
+    nextUnitOfWork = wiprogressRoot;
     deletions = [];
   };
 
