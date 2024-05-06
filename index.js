@@ -408,7 +408,8 @@ const isProperty=key => key!== "children" && !isEvent(key)  //this checks if key
         const [state,setState]=monisReact.useState(1)
 
         return (
-            <h1 onClick={()=>setState(state=>state+1)}>Count is:{state}</h1>
+            <h1 style="cursor:pointer"
+            onClick={()=>setState(c=>c+1)}>Count is:{state}</h1>
         )
     }
     const element = <Counter/>

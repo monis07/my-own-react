@@ -413,9 +413,10 @@ function Counter() {
     state = _monisReact$useState2[0],
     setState = _monisReact$useState2[1];
   return monisReact.newElement("h1", {
+    style: "cursor:pointer",
     onClick: function onClick() {
-      return setState(function (state) {
-        return state + 1;
+      return setState(function (c) {
+        return c + 1;
       });
     }
   }, "Count is:", state);
