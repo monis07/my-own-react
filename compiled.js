@@ -537,13 +537,13 @@ function Counter() {
     _monisReact$useState2 = _slicedToArray(_monisReact$useState, 2),
     state = _monisReact$useState2[0],
     setState = _monisReact$useState2[1];
-  return monisReact.newElement("h1", {
+  return monisReact.newElement("div", null, monisReact.newElement("h1", null, "Click below!"), monisReact.newElement("h1", {
     onClick: function onClick() {
       return setState(function (c) {
         return c + 1;
       });
     }
-  }, "Count is:", state);
+  }, "Count is:", state));
 }
 var element = monisReact.newElement(Counter, null);
 var container = document.getElementById('root');

@@ -567,7 +567,10 @@ const monisReact={
         const [state,setState]=monisReact.useState(1)
 
         return (
+          <div>
+          <h1>Click below!</h1>
             <h1 onClick={()=>setState(c => c+1)}>Count is:{state}</h1>
+            </div>
         )
     }
     const element = <Counter/>
