@@ -132,9 +132,9 @@ function newTextElement(text) {
 }
 
 /* STEP -3 ------------------------------------------------------------------------------------------------- 
-Now we need concurrent mode because if element tree is too big recursive rendering call might block the main thread for too long. if browser needs to do high priority stuff it will have to it until the render finishes.
+Now we need concurrent mode because if element tree is too big recursive rendering call might block the main thread for too long. if browser needs to do high priority stuff it will have to wait until the render finishes.
 
-so we are going to break the work into small units and we will interrupt the rendering if browser needs to some other important work
+so we are going to break the work into small units and we will interrupt the rendering if browser needs to do some other important work
 
 replace function render with function createDom to create fibers
 */
@@ -142,6 +142,9 @@ replace function render with function createDom to create fibers
 function createDom(fiber) {
   //create a new element
   var dom = fiber.type !== 'ELEMENT_TEXY' ? document.createElement(fiber.type) : document.createTextNode("");
+  // console.log("The fiber is")
+  // console.log(fiber)
+  // console.log(dom)
   updateDom(dom, {}, fiber.props);
   return dom;
 }
@@ -171,6 +174,7 @@ var isGone = function isGone(prev, next) {
 function updateDom(dom, prevProps, nextProps) {
   //if event listeners changed we remove it from the node
   //We are removing old or changed event listeners because we need DOM and it's associated event handling is in sync with current state of application
+
   //below line
   //--get array of keys from previous props
   //-- filter the array to include keys that are event related
@@ -182,7 +186,7 @@ function updateDom(dom, prevProps, nextProps) {
     //convert to lowercase and remove "on"
     dom.removeEventListener(eventType, prevProps[name]);
   });
-  //remove old properties
+  //remove old properties by checking if it is gone then we will remove it
   Object.keys(prevProps).filter(isProperty).filter(isGone(prevProps, nextProps)).forEach(function (name) {
     dom[name] = "";
   });
@@ -194,7 +198,12 @@ function updateDom(dom, prevProps, nextProps) {
 
   //Add event listeners(add new handlers)
   Object.keys(nextProps).filter(isEvent).filter(isNew(prevProps, nextProps)).forEach(function (name) {
+    // console.log(name)
     var eventType = name.toLowerCase().substring(2);
+    // console.log("The event type is"+eventType)
+
+    // console.log(nextProps[name])
+
     dom.addEventListener(eventType, nextProps[name]);
   });
 }
@@ -244,6 +253,7 @@ function commitWork(fiber) {
   if (!fiber) return;
 
   //first to find the parent of the dom node by going up the fiber tree until we find a fibre with a dom node
+  //parent fiber has a dom node
   //fiber is the representation in the virtual dom and dom node is actual dom element in the browser document object model
   var domParentFiber = fiber.parent;
   while (!domParentFiber.dom) domParentFiber = domParentFiber.parent;
@@ -322,7 +332,9 @@ function render(element, container) {
     //alternate property is the link to the old fiber we committed to the dom
     alternate: currentRoot
   };
-  deletions = [];
+  // console.log("the work in progress root")
+  // console.log(wiprogressRoot.dom) //div with root id that is index.html file
+  deletions = []; //oldFiber that needs to be deleted are passed to this fiber tree
   nextUnitOfWork = wiprogressRoot;
 }
 var wiprogressRoot = null;
@@ -335,10 +347,14 @@ var deletions = null;
 function workLoop(deadline) {
   var shouldYield = false;
   while (nextUnitOfWork && !shouldYield) {
+    // console.log(nextUnitOfWork);
     nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
     shouldYield = deadline.timeRemaining() < 1;
   }
-  while (!nextUnitOfWork && wiprogressRoot) commitRoot();
+  while (!nextUnitOfWork && wiprogressRoot) {
+    // console.log(wiprogressRoot.child);
+    commitRoot();
+  }
   //this schedules the workloop function to work when browser is idle
   requestIdleCallback(workLoop);
 }
@@ -382,15 +398,22 @@ requestIdleCallback(workLoop);
 ///Lets add support for the function components
 
 //function component are different in two ways 
-// 1.  fiber from function component doesnt have a dom node
+// 1. fiber from function component doesnt have a dom node
 //2. children come from running the function instead of
 // getting them directly from the props
 
 //we will change perform unit of work now according to function components
 function performUnitOfWork(fiber) {
+  // console.log("The fiber is");
+  // console.log(fiber)
+  // console.log("the dom of fiber is")
+  // console.log(fiber.dom);
+
   var isFunctionComponent = fiber.type instanceof Function;
   //if it is function we will handle it differently else as same as we were handling before with the reconcileChildren function
-  if (isFunctionComponent) updateFunctionComponent(fiber);else updateHostComponent(fiber);
+  if (isFunctionComponent) {
+    updateFunctionComponent(fiber);
+  } else updateHostComponent(fiber);
 
   //then we search for next unit of work
   //1st child is tried
@@ -417,7 +440,7 @@ function updateFunctionComponent(fiber) {
   hookIndex = 0;
   wipFiber.hooks = [];
   var children = [fiber.type(fiber.props)];
-  //fiber.type is the App function here and when we run it returns the h1 element
+  //fiber.type is the Counter function here and when we run it by giving fiber props to its argument it gives the whole value what function is returning which is html
   reconcileChildren(fiber, children);
   //then everything works in the same way
 }
@@ -444,6 +467,7 @@ function useState(initial) {
     nextUnitOfWork = wiprogressRoot;
     deletions = [];
   };
+  console.log(hook);
 
   //add new hook to the fiber, increment the hook index by one and return the state
   wipFiber.hooks.push(hook);
@@ -538,6 +562,7 @@ function Counter() {
     state = _monisReact$useState2[0],
     setState = _monisReact$useState2[1];
   return monisReact.newElement("div", null, monisReact.newElement("h1", null, "Click below!"), monisReact.newElement("h1", {
+    id: "big",
     onClick: function onClick() {
       return setState(function (c) {
         return c + 1;
